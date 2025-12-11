@@ -241,7 +241,7 @@ async def nick(interaction: Interaction, member: discord.Member, nickname: str):
     except discord.HTTPException as e:
         await interaction.followup.send(f"❌ Discord error: `{e}`", ephemeral=True)
 
-# Promote
+# ---------------------- PROMOTE ----------------------
 @tree.command(name="promote", description="Give a role to a member (Moderators only)")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.describe(
@@ -257,28 +257,36 @@ async def promote(interaction: Interaction, member: discord.Member, role: Role):
     bot_member = interaction.guild.me
     invoker = interaction.guild.get_member(interaction.user.id)
 
+    # Safety: role hierarchy
     if role >= bot_member.top_role:
         await interaction.response.send_message("❌ I cannot assign that role due to hierarchy.", ephemeral=True)
         return
-
     if role >= invoker.top_role and invoker != interaction.guild.owner:
         await interaction.response.send_message("❌ You cannot assign a role equal/higher than yours.", ephemeral=True)
         return
-
     if role in member.roles:
         await interaction.response.send_message(f"❌ {member.mention} already has **{role.name}**.", ephemeral=True)
         return
 
+    # Assign role
     await member.add_roles(role, reason=f"Promoted by {interaction.user}")
     await apply_rank_nick(member)
 
+    # Log embed
     log_channel = client.get_channel(PROMOTION_LOG_CHANNEL_ID)
     if log_channel:
-        await log_channel.send(f"📈 **Promotion**\n{member.mention} was promoted to **{role.name}**\n👤 By: {interaction.user.mention}")
+        embed = discord.Embed(
+            title="📈 Promotion",
+            description=f"{member.mention} was promoted to **{role.name}**",
+            color=discord.Color.green()
+        )
+        embed.set_footer(text=f"By: {interaction.user}")
+        await log_channel.send(embed=embed)
 
     await interaction.response.send_message(f"✅ {member.mention} promoted to **{role.name}**.", ephemeral=True)
 
-# Demote
+
+# ---------------------- DEMOTE ----------------------
 @tree.command(name="demote", description="Demote a member and remove higher roles")
 @app_commands.guilds(discord.Object(id=GUILD_ID))
 @app_commands.describe(
@@ -293,40 +301,53 @@ async def demote(interaction: Interaction, member: discord.Member, target_role: 
 
     bot_member = interaction.guild.me
 
+    # Safety: hierarchy
     if target_role >= bot_member.top_role:
         await interaction.response.send_message("❌ I cannot manage that role due to hierarchy.", ephemeral=True)
         return
 
-    # Visitor reset
+    # Reset to Visitor
     if target_role.name == UNVERIFIED_ROLE_NAME:
         await member.edit(roles=[])
         visitor = discord.utils.get(member.guild.roles, name=UNVERIFIED_ROLE_NAME)
         if visitor:
             await member.add_roles(visitor)
-
         await apply_rank_nick(member)
 
         log_channel = client.get_channel(DEMOTION_LOG_CHANNEL_ID)
         if log_channel:
-            await log_channel.send(f"📉 **Demotion**\n{member.mention} was fully reset to **Visitor**\n👤 By: {interaction.user.mention}")
+            embed = discord.Embed(
+                title="📉 Demotion",
+                description=f"{member.mention} was fully reset to **Visitor**",
+                color=discord.Color.red()
+            )
+            embed.set_footer(text=f"By: {interaction.user}")
+            await log_channel.send(embed=embed)
 
         await interaction.response.send_message(f"✅ {member.mention} reset to Visitor.", ephemeral=True)
         return
 
+    # Remove roles above or equal to target
     roles_to_remove = [
         r for r in member.roles
         if r.position >= target_role.position and r.name != "@everyone"
     ]
-
     await member.remove_roles(*roles_to_remove)
     if target_role not in member.roles:
         await member.add_roles(target_role)
 
     await apply_rank_nick(member)
 
+    # Log embed
     log_channel = client.get_channel(DEMOTION_LOG_CHANNEL_ID)
     if log_channel:
-        await log_channel.send(f"📉 **Demotion**\n{member.mention} was demoted to **{target_role.name}**\n👤 By: {interaction.user.mention}")
+        embed = discord.Embed(
+            title="📉 Demotion",
+            description=f"{member.mention} was demoted to **{target_role.name}**",
+            color=discord.Color.red()
+        )
+        embed.set_footer(text=f"By: {interaction.user}")
+        await log_channel.send(embed=embed)
 
     await interaction.response.send_message(f"✅ {member.mention} demoted to **{target_role.name}**.", ephemeral=True)
 
@@ -339,3 +360,4 @@ async def on_ready():
 # ---------------------- RUN BOT ----------------------
 TOKEN = os.environ.get("DISCORD_TOKEN")
 client.run(TOKEN)
+
